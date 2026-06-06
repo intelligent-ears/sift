@@ -2,7 +2,6 @@ package graphql_scanner
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,6 +23,10 @@ func TestGraphQLScanner_Run(t *testing.T) {
 		{
 			name: "Detect Introspection and Suggestion",
 			handler: func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/graphql" {
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
 				w.Header().Set("Content-Type", "application/json")
 				bodyBytes := make([]byte, r.ContentLength)
 				r.Body.Read(bodyBytes)
@@ -33,7 +36,7 @@ func TestGraphQLScanner_Run(t *testing.T) {
 					w.Write([]byte(`{"data":{"__typename":"Query"}}`))
 					return
 				}
-				if strings.Contains(body, "__schema") {
+				if strings.Contains(body, "__schema") && !strings.Contains(body, "types { __schema") {
 					w.Write([]byte(`{"data":{"__schema":{"types":[{"name":"User"},{"name":"Admin"}]}}}`))
 					return
 				}
@@ -41,7 +44,8 @@ func TestGraphQLScanner_Run(t *testing.T) {
 					w.Write([]byte(`{"errors":[{"message":"Cannot query field \"usr\" on type \"Query\". Did you mean \"user\"?"}]}`))
 					return
 				}
-				w.Write([]byte(`{}`))
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"errors":[{"message":"unknown query"}]}`))
 			},
 			expectedFindings: map[string]finding.Severity{
 				"GraphQL Introspection Exposed":      finding.SeverityHigh,
@@ -51,6 +55,10 @@ func TestGraphQLScanner_Run(t *testing.T) {
 		{
 			name: "Detect Batching and Complexity Limits Missing",
 			handler: func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/graphql" {
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
 				w.Header().Set("Content-Type", "application/json")
 				bodyBytes := make([]byte, r.ContentLength)
 				r.Body.Read(bodyBytes)
@@ -69,7 +77,8 @@ func TestGraphQLScanner_Run(t *testing.T) {
 					w.Write([]byte(`{"data":{"f1":"Query","f100":"Query"}}`))
 					return
 				}
-				w.Write([]byte(`{}`))
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"errors":[{"message":"unknown query"}]}`))
 			},
 			expectedFindings: map[string]finding.Severity{
 				"GraphQL Batching Enabled":              finding.SeverityLow,
@@ -79,6 +88,10 @@ func TestGraphQLScanner_Run(t *testing.T) {
 		{
 			name: "Detect SQL Injection in Variables",
 			handler: func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/graphql" {
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
 				w.Header().Set("Content-Type", "application/json")
 				bodyBytes := make([]byte, r.ContentLength)
 				r.Body.Read(bodyBytes)
@@ -92,7 +105,8 @@ func TestGraphQLScanner_Run(t *testing.T) {
 					w.Write([]byte(`{"errors":[{"message":"SQLSTATE[42000]: Syntax error or access violation: 1064"}]}`))
 					return
 				}
-				w.Write([]byte(`{}`))
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"errors":[{"message":"unknown query"}]}`))
 			},
 			expectedFindings: map[string]finding.Severity{
 				"GraphQL SQL Injection via Variables": finding.SeverityHigh,

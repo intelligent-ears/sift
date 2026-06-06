@@ -27,7 +27,7 @@ func TestNucleiModule_Run(t *testing.T) {
 			expectedOutcomes: 2,
 			expectedHitStatus: map[string]bool{
 				"wp-xss":           true,
-				"generic-cve.yaml": false,
+				"generic-cve": false,
 			},
 		},
 		{

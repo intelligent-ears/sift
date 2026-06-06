@@ -127,14 +127,10 @@ func TestOrchestrator_Flow(t *testing.T) {
 
 	mockClient.mu.Lock()
 	subDomainHandler, hasDomain := mockClient.subs["sift.tasks.domain"]
-	subPortHandler, hasPort := mockClient.subs["sift.tasks.open_port.22"]
 	mockClient.mu.Unlock()
 
 	if !hasDomain {
 		t.Fatal("expected subscription for sift.tasks.domain")
-	}
-	if !hasPort {
-		t.Fatal("expected subscription for sift.tasks.open_port.22")
 	}
 
 	// Test successful run

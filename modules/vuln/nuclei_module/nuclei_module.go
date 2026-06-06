@@ -141,7 +141,7 @@ func (n *NucleiModule) Run(ctx context.Context, task module.Task) ([]module.Find
 			continue // skip corrupt lines
 		}
 
-		hitTemplates[res.TemplateID] = true
+		hitTemplates[strings.TrimSuffix(res.TemplateID, ".yaml")] = true
 
 		severityVal := mapSeverity(res.Info.Severity)
 
@@ -174,7 +174,7 @@ func (n *NucleiModule) Run(ctx context.Context, task module.Task) ([]module.Find
 	// Generate outcomes tasks for feedback loop
 	var downstreamTasks []module.Task
 	for _, t := range templates {
-		hit := hitTemplates[t]
+		hit := hitTemplates[strings.TrimSuffix(t, ".yaml")]
 		downstreamTasks = append(downstreamTasks, module.Task{
 			ID:   fmt.Sprintf("outcome-%s-%s", task.ID, t),
 			Type: "sift.outcomes",
@@ -186,7 +186,7 @@ func (n *NucleiModule) Run(ctx context.Context, task module.Task) ([]module.Find
 				Tags:  task.Target.Tags,
 			},
 			Payload: map[string]any{
-				"template_id": t,
+				"template_id": strings.TrimSuffix(t, ".yaml"),
 				"target_type": string(task.Target.Type),
 				"hit":         hit,
 			},
