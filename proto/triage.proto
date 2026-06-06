@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package triage;
+
+option go_package = "github.com/sift-scanner/sift/proto/triage";
+
+service TriageService {
+  rpc RankTemplates(RankRequest) returns (RankResponse);
+  rpc ScoreFinding(ScoreRequest) returns (ScoreResponse);
+  rpc RecordOutcome(OutcomeRequest) returns (OutcomeResponse);
+}
+
+message RankRequest {
+  repeated string template_ids = 1;
+  TargetContext target_context = 2;
+}
+
+message RankResponse {
+  repeated ScoredTemplate templates = 1;
+}
+
+message ScoredTemplate {
+  string template_id = 1;
+  float score = 2;
+}
+
+message TargetContext {
+  repeated string technologies = 1;
+  repeated int32 open_ports = 2;
+  string cms_type = 3;
+  string cms_version = 4;
+}
+
+message ScoreRequest {
+  Finding finding = 1;
+  TargetContext target_context = 2;
+}
+
+message ScoreResponse {
+  float false_pos_prob = 1;
+  float adjusted_severity = 2;
+}
+
+message OutcomeRequest {
+  string template_id = 1;
+  string target_type = 2;
+  bool hit = 3;
+  bool analyst_confirmed = 4;
+}
+
+message OutcomeResponse {
+  bool ok = 1;
+}
+
+message Finding {
+  string module_name = 1;
+  string title = 2;
+  string severity = 3;
+  map<string, string> evidence = 4;
+}

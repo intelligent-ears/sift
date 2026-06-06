@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sift.fullname" . }}-orchestrator
+  labels:
+    {{- include "sift.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.orchestrator.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "sift.fullname" . }}-orchestrator
+  template:
+    metadata:
+      labels:
+        app: {{ include "sift.fullname" . }}-orchestrator
+    spec:
+      containers:
+        - name: orchestrator
+          image: {{ .Values.orchestrator.image }}
+          imagePullPolicy: {{ .Values.orchestrator.imagePullPolicy }}
+          env:
+            - name: NATS_URL
+              value: "nats://{{ include "sift.fullname" . }}-nats:4222"
+            - name: DATABASE_URL
+              value: "postgres://{{ .Values.postgres.username }}:{{ .Values.postgres.password }}@{{ include "sift.fullname" . }}-postgres:5432/{{ .Values.postgres.database }}?sslmode=disable"
+            - name: SIFT_CONFIG_PATH
+              value: "/config/sift.yaml"
+          ports:
+            # Main port for any metrics, healthchecks, etc.
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          volumeMounts:
+            - name: config-volume
+              mountPath: /config
+          resources:
+            {{- toYaml .Values.orchestrator.resources | nindent 12 }}
+      volumes:
+        - name: config-volume
+          configMap:
+            name: {{ include "sift.fullname" . }}-config

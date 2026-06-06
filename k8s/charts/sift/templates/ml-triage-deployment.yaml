@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sift.fullname" . }}-ml-triage
+  labels:
+    {{- include "sift.labels" . | nindent 4 }}
+spec:
+  ports:
+    - port: {{ .Values.mlTriage.port }}
+      targetPort: 50051
+      name: grpc
+  selector:
+    app: {{ include "sift.fullname" . }}-ml-triage
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sift.fullname" . }}-ml-triage
+  labels:
+    {{- include "sift.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.mlTriage.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "sift.fullname" . }}-ml-triage
+  template:
+    metadata:
+      labels:
+        app: {{ include "sift.fullname" . }}-ml-triage
+    spec:
+      containers:
+        - name: ml-triage
+          image: {{ .Values.mlTriage.image }}
+          imagePullPolicy: {{ .Values.mlTriage.imagePullPolicy }}
+          env:
+            - name: REDIS_HOST
+              value: {{ include "sift.fullname" . }}-redis
+            - name: REDIS_PORT
+              value: "6379"
+            - name: GRPC_PORT
+              value: "50051"
+          ports:
+            - containerPort: 50051
+              name: grpc
+          resources:
+            {{- toYaml .Values.mlTriage.resources | nindent 12 }}

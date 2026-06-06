@@ -1,0 +1,60 @@
+# Default values for sift.
+# This is a YAML-formatted file.
+
+global:
+  storageClass: ""
+
+postgres:
+  replicaCount: 1
+  image: postgres:15-alpine
+  username: postgres
+  password: postgres_sift_secret_pwd
+  database: sift
+  port: 5432
+  storage:
+    size: 8Gi
+
+redis:
+  image: redis:7-alpine
+  port: 6379
+
+nats:
+  replicaCount: 1  # 1 for dev/single node, 3 for clustered prod
+  image: nats:2.10-alpine
+  port: 4222
+  clusterPort: 6222
+
+mlTriage:
+  replicaCount: 1
+  image: sift-ml-triage:latest
+  imagePullPolicy: IfNotPresent
+  port: 50051
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+orchestrator:
+  replicaCount: 1
+  image: sift-orchestrator:latest
+  imagePullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 5
+    targetLag: 100 # scale on NATS consumer lag metric (custom metric)
+
+config:
+  subfinderTimeout: "60s"
+  portScannerPorts: "21,22,25,80,443,3306,5432,6379,8080,8443"
+  scanningPacketsPerSecond: 5
