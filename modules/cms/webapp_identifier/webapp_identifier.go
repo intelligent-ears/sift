@@ -1,7 +1,6 @@
 package webapp_identifier
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -9,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/sift-scanner/sift/internal/registry"
 	"github.com/sift-scanner/sift/pkg/httpclient"
 	"github.com/sift-scanner/sift/pkg/module"
@@ -230,7 +230,7 @@ func (w *WebappIdentifier) capConfidence(score float32) float32 {
 
 func (w *WebappIdentifier) buildCMSTask(cms string, version string, conf float32, urlStr string, parent module.Task) module.Task {
 	return module.Task{
-		ID:   fmt.Sprintf("cms_context-%s-%s", cms, parent.ID),
+		ID:   uuid.New().String(),
 		Type: module.TaskType(fmt.Sprintf("cms_context.%s", cms)),
 		Target: target.Target{
 			ID:    parent.Target.ID,

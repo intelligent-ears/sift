@@ -9,7 +9,6 @@ import (
 
 	"github.com/sift-scanner/sift/internal/registry"
 	"github.com/sift-scanner/sift/pkg/config"
-	"github.com/sift-scanner/sift/pkg/finding"
 	"github.com/sift-scanner/sift/pkg/module"
 	siftnats "github.com/sift-scanner/sift/pkg/nats"
 )

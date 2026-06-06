@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sift-scanner/sift/internal/registry"
 	"github.com/sift-scanner/sift/pkg/finding"
 	"github.com/sift-scanner/sift/pkg/httpclient"
@@ -240,7 +241,7 @@ func (g *GraphQLScanner) checkIntrospection(ctx context.Context, client *httpcli
 		}
 
 		findingObj := module.Finding{
-			ID:          fmt.Sprintf("gql-introspection-%s", parent.ID),
+			ID:          uuid.New().String(),
 			ModuleName:  g.Name(),
 			Target:      parent.Target,
 			Severity:    finding.SeverityHigh,
@@ -272,7 +273,7 @@ func (g *GraphQLScanner) checkFieldSuggestions(ctx context.Context, client *http
 
 	if strings.Contains(body, "Did you mean") || strings.Contains(body, "didYouMean") {
 		findingObj := module.Finding{
-			ID:          fmt.Sprintf("gql-suggestions-%s", parent.ID),
+			ID:          uuid.New().String(),
 			ModuleName:  g.Name(),
 			Target:      parent.Target,
 			Severity:    finding.SeverityMedium,
@@ -320,7 +321,7 @@ func (g *GraphQLScanner) checkQueryDepth(ctx context.Context, client *httpclient
 	// If the server accepts it and returns 200 without depth restriction errors
 	if resp.StatusCode == http.StatusOK && !strings.Contains(strings.ToLower(body), "depth") && !strings.Contains(strings.ToLower(body), "limit") {
 		findingObj := module.Finding{
-			ID:          fmt.Sprintf("gql-depth-abuse-%s", parent.ID),
+			ID:          uuid.New().String(),
 			ModuleName:  g.Name(),
 			Target:      parent.Target,
 			Severity:    finding.SeverityMedium,
@@ -358,7 +359,7 @@ func (g *GraphQLScanner) checkQueryComplexity(ctx context.Context, client *httpc
 
 	if resp.StatusCode == http.StatusOK && !strings.Contains(strings.ToLower(body), "complexity") && !strings.Contains(strings.ToLower(body), "limit") {
 		findingObj := module.Finding{
-			ID:          fmt.Sprintf("gql-complexity-abuse-%s", parent.ID),
+			ID:          uuid.New().String(),
 			ModuleName:  g.Name(),
 			Target:      parent.Target,
 			Severity:    finding.SeverityMedium,
@@ -391,7 +392,7 @@ func (g *GraphQLScanner) checkBatching(ctx context.Context, client *httpclient.C
 	// Verify that response is a JSON array and contains expected graphql output
 	if strings.HasPrefix(body, "[") && strings.Contains(body, "__typename") {
 		findingObj := module.Finding{
-			ID:          fmt.Sprintf("gql-batching-%s", parent.ID),
+			ID:          uuid.New().String(),
 			ModuleName:  g.Name(),
 			Target:      parent.Target,
 			Severity:    finding.SeverityLow,
@@ -432,24 +433,28 @@ func (g *GraphQLScanner) checkAuthBypass(ctx context.Context, client *httpclient
 
 	for _, tq := range targetQueries {
 		query := fmt.Sprintf(`{"query":"{ %s }"}`, tq)
-		resp, err := client.DoWithRetry(ctx, "POST", endpoint, strings.NewReader(query))
+		body, statusCode, err := func() (string, int, error) {
+			resp, err := client.DoWithRetry(ctx, "POST", endpoint, strings.NewReader(query))
+			if err != nil {
+				return "", 0, err
+			}
+			defer resp.Body.Close()
+			b, _ := io.ReadAll(resp.Body)
+			return string(b), resp.StatusCode, nil
+		}()
 		if err != nil {
 			continue
 		}
-		defer resp.Body.Close()
-
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		body := string(bodyBytes)
 
 		// Check if response returned data and did NOT contain typical "unauthorized" or "forbidden" errors
 		loweredBody := strings.ToLower(body)
-		if resp.StatusCode == http.StatusOK && strings.Contains(body, `"data"`) &&
+		if statusCode == http.StatusOK && strings.Contains(body, `"data"`) &&
 			!strings.Contains(loweredBody, "unauthorized") &&
 			!strings.Contains(loweredBody, "forbidden") &&
 			!strings.Contains(loweredBody, "access denied") {
 
 			findingObj := module.Finding{
-				ID:          fmt.Sprintf("gql-auth-bypass-%s", parent.ID),
+				ID:          uuid.New().String(),
 				ModuleName:  g.Name(),
 				Target:      parent.Target,
 				Severity:    finding.SeverityHigh,
@@ -488,19 +493,23 @@ func (g *GraphQLScanner) checkVariablesInjection(ctx context.Context, client *ht
 	for _, pay := range payloads {
 		// Send query using variables field containing SQLi payload
 		query := fmt.Sprintf(`{"query":"query($id: String){item(id: $id){name}}", "variables":{"id":"%s"}}`, pay)
-		resp, err := client.DoWithRetry(ctx, "POST", endpoint, strings.NewReader(query))
+		body, _, err := func() (string, int, error) {
+			resp, err := client.DoWithRetry(ctx, "POST", endpoint, strings.NewReader(query))
+			if err != nil {
+				return "", 0, err
+			}
+			defer resp.Body.Close()
+			b, _ := io.ReadAll(resp.Body)
+			return string(b), resp.StatusCode, nil
+		}()
 		if err != nil {
 			continue
 		}
-		defer resp.Body.Close()
-
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		body := string(bodyBytes)
 
 		for _, pattern := range sqlErrorPatterns {
 			if strings.Contains(body, pattern) {
 				findingObj := module.Finding{
-					ID:          fmt.Sprintf("gql-variables-sqli-%s", parent.ID),
+					ID:          uuid.New().String(),
 					ModuleName:  g.Name(),
 					Target:      parent.Target,
 					Severity:    finding.SeverityHigh,
@@ -558,7 +567,7 @@ func (g *GraphQLScanner) checkAliasAmplification(ctx context.Context, client *ht
 	// Check if amplified is > 5x slower
 	if elapsedAmp > 5*elapsedBase && elapsedAmp > 20*time.Millisecond {
 		findingObj := module.Finding{
-			ID:          fmt.Sprintf("gql-alias-amplification-%s", parent.ID),
+			ID:          uuid.New().String(),
 			ModuleName:  g.Name(),
 			Target:      parent.Target,
 			Severity:    finding.SeverityMedium,

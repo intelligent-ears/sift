@@ -1,6 +1,7 @@
 package filter
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 
@@ -150,5 +151,6 @@ func FilterCandidates(idx *index.TemplateIndex, payload NucleiJobPayload) []stri
 	for id := range candidates {
 		result = append(result, id)
 	}
+	sort.Strings(result)
 	return result
 }

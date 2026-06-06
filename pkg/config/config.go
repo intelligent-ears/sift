@@ -37,7 +37,7 @@ func Init() {
 	_ = viper.BindEnv("scanning.packets_per_second", "SCANNING_PACKETS_PER_SECOND")
 
 	globalConfig.SubfinderTimeout = viper.GetDuration("subfinder.timeout")
-	globalConfig.PortScannerPorts = viper.String("port_scanner.ports")
+	globalConfig.PortScannerPorts = viper.GetString("port_scanner.ports")
 	globalConfig.ScanningPacketsPerSecond = viper.GetInt("scanning.packets_per_second")
 }
 

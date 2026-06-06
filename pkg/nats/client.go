@@ -165,7 +165,7 @@ func (c *Client) Subscribe(ctx context.Context, subject string, handler func(mod
 				zap.String("task_id", task.ID),
 				zap.Error(err),
 			)
-			_ = msg.Nack()
+			_ = msg.Nak()
 		} else {
 			c.logger.Info("Handler completed successfully, acking message",
 				zap.String("subject", subject),
@@ -217,7 +217,7 @@ func (c *Client) SubscribeFinding(ctx context.Context, subject string, handler f
 				zap.String("finding_id", f.ID),
 				zap.Error(err),
 			)
-			_ = msg.Nack()
+			_ = msg.Nak()
 		} else {
 			c.logger.Info("Handler completed successfully for finding, acking message",
 				zap.String("subject", subject),

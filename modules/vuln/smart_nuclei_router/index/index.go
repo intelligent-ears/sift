@@ -127,3 +127,9 @@ func NewTemplateIndex(path string) (*TemplateIndex, error) {
 
 	return idx, err
 }
+
+// LoadIndex is an alias for NewTemplateIndex to load the template index.
+func LoadIndex(path string) (*TemplateIndex, error) {
+	return NewTemplateIndex(path)
+}
+
