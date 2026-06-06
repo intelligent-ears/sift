@@ -1,10 +1,24 @@
 # Sift
 
-**Sift** is a next-generation modular vulnerability scanner built in Go, designed for large-scale automated security assessments. It advances the ideas pioneered by [Artemis (CERT-PL)](https://github.com/CERT-Polska/Artemis) with three core innovations:
+**Sift** is a modular, large-scale vulnerability scanner built in Go. It is designed for national CERTs, security researchers, and bug bounty hunters who need to scan thousands of targets reliably, with signal — not noise.
 
-- **Context-aware Nuclei orchestration** — fingerprint targets first, then filter 10,000+ Nuclei templates to the relevant 50 using a two-stage metadata filter + ML re-ranker. Makes Nuclei feasible at scale.
-- **Online ML triage middleware** — a Python/gRPC microservice that reduces false positives, re-ranks findings by severity, and clusters similar results. Adapts to new deployments without retraining.
-- **GraphQL attack surface coverage** — 8 checks covering introspection exposure, query depth/complexity abuse, batching attacks, auth bypass, and injection via variables. Not covered by Artemis or standard Nuclei templates.
+Sift's core thesis: most scanners either run everything (slow, noisy) or nothing (fast, blind). Sift fingerprints targets first, then selects only the relevant checks using a two-stage metadata filter and online ML re-ranker — making comprehensive scanning feasible at scale.
+
+---
+
+## What makes Sift different
+
+**Context-aware Nuclei orchestration**
+Sift fingerprints every target before scanning. The smart Nuclei router filters 10,000+ templates down to the relevant 50 using tag matching, technology detection, and version range applicability. A ML re-ranker then scores candidates using per-template Bayesian hit-rate tracking, updated online after every scan. No blind template runs. No wasted compute.
+
+**Online ML triage middleware**
+A Python/gRPC microservice reduces false positives, re-ranks findings by severity in target context, and clusters similar findings across scans. It adapts to new deployments within the first few hundred scans — no retraining required. If the ML service is unavailable, scanning continues unaffected.
+
+**GraphQL attack surface coverage**
+A dedicated native module covers GraphQL vulnerabilities not addressed by standard template libraries: introspection exposure, query depth and complexity abuse, batching attacks, auth bypass on sensitive resolvers, injection via variables, and alias-based amplification.
+
+**Fully modular**
+Every scanner capability is an independent module implementing one Go interface. Adding a new module is a single file with an `init()` registration call. Modules communicate exclusively via NATS JetStream — zero direct coupling.
 
 ---
 
@@ -14,33 +28,36 @@
 Target ingestion (CLI / REST API)
          │
          ▼
-    Orchestrator  ←──────────────────────────────┐
-    (NATS JetStream)                             │ feedback
-         │                                       │
-    ┌────┴─────────────────┐                     │
-    │                      │                     │
-  Recon              Fingerprint            ML Middleware
-  modules            modules                (Python/gRPC)
-    │                      │                     ▲
-    └──────────┬───────────┘                     │
-               │                                 │
-        Smart Nuclei Router  ────────────────────┘
-        (metadata filter + ML re-rank)
+    Orchestrator
+    (NATS JetStream message bus)
+         │
+    ┌────┴──────────────────────┐
+    │                           │
+  Recon modules          Fingerprint modules
+  DNS, ports, ASN        CMS, version, tech stack
+    │                           │
+    └──────────┬────────────────┘
                │
-          Nuclei runner
+       Smart Nuclei Router  ◄─── ML re-ranker (Python/gRPC)
+       Stage 1: metadata filter        │
+       Stage 2: ML re-rank             │ online feedback
+               │                       │
+          Nuclei runner ───────────────┘
                │
-        Findings store (PostgreSQL)
+       Findings store (PostgreSQL)
                │
-        Report generator
+       ┌───────┴────────┐
+       │                │
+  ML triage        Report generator
+  FP reduction     Markdown / email
+  clustering
 ```
-
-All modules communicate exclusively via **NATS JetStream**. Every module implements a single Go interface — adding a new module is a single file with an `init()` registration call.
 
 ---
 
 ## Modules
 
-Sift ships with 38 modules across 7 categories:
+38 modules across 7 categories, all enabled/disabled independently:
 
 | Category | Modules |
 |---|---|
@@ -52,7 +69,7 @@ Sift ships with 38 modules across 7 categories:
 | Infra / Email | mail_dns_scanner |
 | Extra | sql_injection_detector, subdomain_takeover, ssl_scanner, wpscan, xss_scanner |
 
-★ = novel modules not present in Artemis
+★ = novel modules, not found in other open-source scanners
 
 ---
 
@@ -74,7 +91,7 @@ Sift ships with 38 modules across 7 categories:
 ### Prerequisites
 
 - Go 1.22+
-- Docker + Docker Compose (for local infra)
+- Docker + Docker Compose
 - Nuclei templates (`nuclei -update-templates`)
 
 ### Run locally
@@ -84,6 +101,7 @@ git clone https://github.com/intelligent-ears/sift.git
 cd sift
 
 # Start infrastructure (NATS, Redis, PostgreSQL)
+# See k8s/ for Helm-based deployment
 docker compose up -d
 
 # Run database migrations
@@ -92,11 +110,17 @@ go run ./cmd/sift migrate
 # Start the orchestrator
 go run ./cmd/orchestrator
 
-# In another terminal — add a target
+# Add a target
 go run ./cmd/sift scan --target example.com
+
+# Bulk ingestion
+go run ./cmd/sift scan --file targets.txt
 
 # Query findings
 go run ./cmd/sift findings --target example.com --severity HIGH
+
+# Generate report
+go run ./cmd/sift report --scan-id <id> --format markdown
 ```
 
 ### Deploy to Kubernetes
@@ -130,31 +154,40 @@ func init() {
 }
 ```
 
+The orchestrator discovers and subscribes all registered modules at startup. No manual wiring.
+
+### Adding a module
+
+1. Create `modules/<category>/<name>/<name>.go`
+2. Implement `module.Module`
+3. Call `registry.Register(&YourModule{})` in `init()`
+4. Write tests in `<name>_test.go`
+
 See [DESIGN.md](DESIGN.md) for the full architectural specification.
 
 ---
 
 ## Smart Nuclei Router
 
-Artemis avoids broad Nuclei runs due to cost and noise at scale. Sift solves this with a two-stage template selector:
+The two-stage template selector is Sift's primary technical contribution.
 
 **Stage 1 — Deterministic metadata filter**
 
-At startup, all Nuclei templates are indexed by `tags`, `technology`, `severity`, and port applicability. Given a fingerprinted target (e.g. `WordPress 6.1.2, PHP 7.4, ports 80/443`), Stage 1 queries the index and returns ~150–400 relevant templates from 10,000+.
+At startup, all Nuclei templates are indexed by `tags`, `technology`, `severity`, and port applicability. Given a fingerprinted target (e.g. `WordPress 6.1.2, PHP 7.4, ports 80/443`), Stage 1 returns ~150–400 relevant templates from 10,000+.
 
-Tags `dos` and `fuzz` are always excluded. Tags `exposure`, `misconfiguration`, and `default-login` are always included.
+Tags `dos` and `fuzz` are always excluded. Tags `exposure`, `misconfiguration`, and `default-login` are always included regardless of target type.
 
 **Stage 2 — ML re-ranker**
 
-The candidate list is scored by the ML middleware using per-template Bayesian hit-rate tracking (Beta distribution, updated online after each scan). The top N templates (default: 50, configurable) are passed to the Nuclei runner.
+Candidates are scored by the ML middleware using per-template Beta distributions tracking historical hit rates. Updated online after every scan — the model improves continuously without retraining. The top N templates (default: 50, configurable via `NUCLEI_MAX_TEMPLATES`) are passed to the Nuclei runner.
 
-The re-ranker falls back gracefully if the ML service is unavailable — Stage 1 results are used in sorted order.
+Falls back to sorted Stage 1 results if the ML service is unavailable.
 
 ---
 
 ## GraphQL Scanner
 
-Sift includes a dedicated GraphQL module covering attack surface not addressed by existing Nuclei templates:
+8 checks covering attack surface not addressed by standard Nuclei templates:
 
 | Check | Severity |
 |---|---|
@@ -167,38 +200,36 @@ Sift includes a dedicated GraphQL module covering attack surface not addressed b
 | SQL injection via variables | HIGH |
 | Alias-based query amplification | MEDIUM |
 
-Endpoint discovery probes `/graphql`, `/api/graphql`, `/graphql/v1`, `/v1/graphql`, `/query`, `/gql`. Each check is independently configurable via `GRAPHQL_CHECKS_ENABLED`.
+Probes `/graphql`, `/api/graphql`, `/graphql/v1`, `/v1/graphql`, `/query`, `/gql`. Each check is independently configurable via `GRAPHQL_CHECKS_ENABLED`.
 
 ---
 
 ## ML Middleware
 
-The triage service is a Python gRPC microservice that:
+The triage service is a Python gRPC microservice that runs alongside the Go core:
 
-- Tracks per-template hit rates using Beta distributions (online, no retraining)
-- Scores findings for false positive probability
-- Clusters similar findings across targets
-- Persists model state to Redis — survives pod restarts
+- Per-template Beta distribution hit-rate tracking (online, no batch retraining)
+- False positive probability scoring per finding
+- Finding clustering across targets using MiniBatchKMeans
+- Model state persisted to Redis — survives pod restarts
 
-The Go core calls it via generated gRPC stubs. If the service is down, scanning continues unaffected — the ML layer is enhancement, not a dependency.
+The Go core calls it via gRPC. Scanning continues unaffected if the service is unavailable.
 
 ---
 
 ## Configuration
-
-All configuration is via YAML file or environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
 | `NATS_URL` | `nats://localhost:4222` | NATS JetStream URL |
 | `POSTGRES_DSN` | — | PostgreSQL connection string |
 | `REDIS_ADDR` | `localhost:6379` | Redis address |
-| `NUCLEI_TEMPLATES_PATH` | `~/.nuclei-templates` | Path to Nuclei templates directory |
-| `NUCLEI_MAX_TEMPLATES` | `50` | Max templates per target after ML re-ranking |
+| `NUCLEI_TEMPLATES_PATH` | `~/.nuclei-templates` | Nuclei templates directory |
+| `NUCLEI_MAX_TEMPLATES` | `50` | Max templates after ML re-ranking |
 | `SIFT_ML_ENDPOINT` | — | ML middleware gRPC endpoint (optional) |
-| `GRAPHQL_CHECKS_ENABLED` | all | Comma-separated list of enabled GraphQL checks |
+| `GRAPHQL_CHECKS_ENABLED` | all | Comma-separated enabled GraphQL checks |
 | `PORT_SCANNER_PORTS` | `21,22,25,80,443,3306,5432,6379,8080,8443` | Ports to scan |
-| `SCANNING_PACKETS_PER_SECOND` | `5` | Rate limit for port scanning |
+| `SCANNING_PACKETS_PER_SECOND` | `5` | Port scan rate limit |
 
 ---
 
@@ -211,46 +242,27 @@ go test ./...
 # Build
 go build ./...
 
-# Lint
-golangci-lint run
-
 # Regenerate gRPC stubs (requires protoc)
 ./scripts/compile-proto.sh
+
+# List all modules and their status
+go run ./cmd/sift modules list
+
+# Enable / disable a module
+go run ./cmd/sift modules enable graphql_scanner
+go run ./cmd/sift modules disable ssh_bruter
 ```
-
-### Adding a module
-
-1. Create `modules/<category>/<name>/<name>.go`
-2. Implement `module.Module`
-3. Call `registry.Register(&YourModule{})` in `init()`
-4. Add tests in `<name>_test.go`
-
-No other wiring required. The orchestrator discovers and subscribes all registered modules at startup.
-
----
-
-## Comparison with Artemis
-
-| Feature | Artemis | Sift |
-|---|---|---|
-| Language | Python (Karton) | Go |
-| Nuclei integration | Limited (cost/noise concern) | Full, context-filtered |
-| Template selection | Manual/none | Two-stage: metadata filter + ML re-rank |
-| False positive reduction | Manual review | Online ML triage |
-| GraphQL scanning | ✗ | ✓ (8 checks) |
-| Deployment | Docker Compose | Kubernetes-native (Helm) |
-| Message bus | Karton (Redis-backed) | NATS JetStream |
-| ML adaptation | ✗ | Online (no retraining) |
 
 ---
 
 ## Roadmap
 
+- [ ] Docker Compose for local development
 - [ ] Real protobuf compilation + ML service Docker image
-- [ ] IoT/embedded target module
 - [ ] Web dashboard
 - [ ] SARIF report output
 - [ ] OpenAPI/REST API for scan management
+- [ ] IoT/embedded target module
 - [ ] `sift-modules-extra` repo for non-Apache-licensed modules
 
 ---
@@ -258,9 +270,3 @@ No other wiring required. The orchestrator discovers and subscribes all register
 ## License
 
 Apache 2.0 — see [LICENSE](LICENSE).
-
----
-
-## Acknowledgements
-
-Inspired by [Artemis](https://github.com/CERT-Polska/Artemis) by CERT Polska. Nuclei templates by [ProjectDiscovery](https://github.com/projectdiscovery/nuclei-templates).
