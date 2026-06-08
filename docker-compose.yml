@@ -1,0 +1,98 @@
+version: "3.9"
+
+services:
+
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: sift-nats
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "4222:4222"   # client
+      - "8222:8222"   # monitoring
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: sift-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: sift-postgres
+    environment:
+      POSTGRES_USER: sift
+      POSTGRES_PASSWORD: sift
+      POSTGRES_DB: sift
+    ports:
+      - "5432:5432"
+    volumes:
+      - sift-pgdata:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d   # auto-runs migrations on first start
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sift"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── ML Middleware ────────────────────────────────────────────────────────────
+
+  ml-triage:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    container_name: sift-ml
+    environment:
+      REDIS_ADDR: redis:6379
+      GRPC_PORT: 50051
+    ports:
+      - "50051:50051"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import grpc; grpc.channel_ready_future(grpc.insecure_channel('localhost:50051')).result(timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Orchestrator ─────────────────────────────────────────────────────────────
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sift-orchestrator
+    environment:
+      NATS_URL: nats://nats:4222
+      POSTGRES_DSN: postgres://sift:sift@postgres:5432/sift?sslmode=disable
+      REDIS_ADDR: redis:6379
+      SIFT_ML_ENDPOINT: ml-triage:50051
+      NUCLEI_TEMPLATES_PATH: /root/nuclei-templates
+      NUCLEI_MAX_TEMPLATES: "50"
+      SCANNING_PACKETS_PER_SECOND: "5"
+      PORT_SCANNER_PORTS: "21,22,25,80,443,3306,5432,6379,8080,8443"
+    depends_on:
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - nuclei-templates:/root/nuclei-templates
+
+volumes:
+  sift-pgdata:
+  nuclei-templates:
