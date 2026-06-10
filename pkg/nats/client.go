@@ -17,7 +17,7 @@ import (
 type ClientInterface interface {
 	Publish(ctx context.Context, subject string, task module.Task) error
 	PublishFinding(ctx context.Context, subject string, f finding.Finding) error
-	Subscribe(ctx context.Context, subject string, handler func(module.Task) error) error
+	Subscribe(ctx context.Context, moduleName string, subject string, handler func(module.Task) error) error
 	SubscribeFinding(ctx context.Context, subject string, handler func(finding.Finding) error) error
 }
 
@@ -130,10 +130,10 @@ func (c *Client) PublishFinding(ctx context.Context, subject string, f finding.F
 }
 
 // Subscribe registers a durable push consumer subscription with explicit manual Acks.
-func (c *Client) Subscribe(ctx context.Context, subject string, handler func(module.Task) error) error {
+func (c *Client) Subscribe(ctx context.Context, moduleName string, subject string, handler func(module.Task) error) error {
 	cleanSubject := strings.ReplaceAll(subject, ".", "_")
 	cleanSubject = strings.ReplaceAll(cleanSubject, "*", "wildcard")
-	durableName := fmt.Sprintf("sift_durable_%s", cleanSubject)
+	durableName := fmt.Sprintf("sift_durable_%s_%s", moduleName, cleanSubject)
 
 	c.logger.Info("Subscribing to subject with durable push consumer",
 		zap.String("subject", subject),
@@ -186,7 +186,7 @@ func (c *Client) Subscribe(ctx context.Context, subject string, handler func(mod
 func (c *Client) SubscribeFinding(ctx context.Context, subject string, handler func(finding.Finding) error) error {
 	cleanSubject := strings.ReplaceAll(subject, ".", "_")
 	cleanSubject = strings.ReplaceAll(cleanSubject, "*", "wildcard")
-	durableName := fmt.Sprintf("sift_durable_%s", cleanSubject)
+	durableName := fmt.Sprintf("sift_durable_store_%s", cleanSubject)
 
 	c.logger.Info("Subscribing to findings subject with durable push consumer",
 		zap.String("subject", subject),

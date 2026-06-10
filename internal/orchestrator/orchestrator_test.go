@@ -54,7 +54,7 @@ func (m *mockNATSClient) PublishFinding(ctx context.Context, subject string, f f
 	return nil
 }
 
-func (m *mockNATSClient) Subscribe(ctx context.Context, subject string, handler func(module.Task) error) error {
+func (m *mockNATSClient) Subscribe(ctx context.Context, moduleName string, subject string, handler func(module.Task) error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.subs[subject] = handler

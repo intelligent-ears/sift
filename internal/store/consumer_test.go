@@ -60,7 +60,7 @@ func (m *mockConsumerNATSClient) PublishFinding(ctx context.Context, subject str
 	return nil
 }
 
-func (m *mockConsumerNATSClient) Subscribe(ctx context.Context, subject string, handler func(module.Task) error) error {
+func (m *mockConsumerNATSClient) Subscribe(ctx context.Context, moduleName string, subject string, handler func(module.Task) error) error {
 	return nil
 }
 

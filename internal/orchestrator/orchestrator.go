@@ -43,7 +43,7 @@ func (o *Orchestrator) Start(ctx context.Context) error {
 				zap.String("nats_subject", subSubject),
 			)
 
-			err := o.client.Subscribe(ctx, subSubject, func(task module.Task) error {
+			err := o.client.Subscribe(ctx, mod.Name(), subSubject, func(task module.Task) error {
 				// Check for context cancellation before processing
 				select {
 				case <-ctx.Done():

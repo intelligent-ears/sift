@@ -134,7 +134,7 @@ func main() {
 }
 
 func getStore() (*store.PGStore, error) {
-	viper.SetDefault("database.url", "postgres://postgres:postgres@localhost:5432/sift?sslmode=disable")
+	viper.SetDefault("database.url", "postgres://sift:sift@localhost:5432/sift?sslmode=disable")
 	_ = viper.BindEnv("database.url", "DATABASE_URL")
 	dbURL := viper.GetString("database.url")
 	return store.NewPGStore(dbURL)
