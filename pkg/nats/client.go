@@ -1,6 +1,7 @@
 package nats
 
 import (
+	"time"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -173,7 +174,7 @@ func (c *Client) Subscribe(ctx context.Context, moduleName string, subject strin
 			)
 			_ = msg.Ack()
 		}
-	}, nats.Durable(durableName), nats.ManualAck())
+	}, nats.Durable(durableName), nats.ManualAck(), nats.AckWait(10*time.Minute))
 
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to %s: %w", subject, err)
@@ -225,7 +226,7 @@ func (c *Client) SubscribeFinding(ctx context.Context, subject string, handler f
 			)
 			_ = msg.Ack()
 		}
-	}, nats.Durable(durableName), nats.ManualAck())
+	}, nats.Durable(durableName), nats.ManualAck(), nats.AckWait(10*time.Minute))
 
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to findings %s: %w", subject, err)
